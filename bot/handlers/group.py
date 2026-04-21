@@ -1,46 +1,24 @@
 import logging
 from aiogram import Router, types
-from aiogram.filters import ChatMemberUpdatedFilter
 from aiogram.types import ChatMemberUpdated
-
 from bot.db.queries import add_group, deactivate_group
 
 logger = logging.getLogger(__name__)
-
 router = Router(name="group")
 
-# Фильтры для переходов статуса бота
-JOIN_FILTER = ChatMemberUpdatedFilter(
-    member_status_changed=ChatMemberUpdatedFilter.IS_NOT_MEMBER
-    >> ChatMemberUpdatedFilter.IS_MEMBER
-)
-LEAVE_FILTER = ChatMemberUpdatedFilter(
-    member_status_changed=ChatMemberUpdatedFilter.IS_MEMBER
-    >> ChatMemberUpdatedFilter.IS_NOT_MEMBER
-)
 
-
-@router.my_chat_member(JOIN_FILTER)
-async def bot_added_to_group(
-    event: ChatMemberUpdated, db: types.Connection  # db будет подставлен из dp["db"]
-):
-    """
-    Обрабатывает событие добавления бота в чат (группу/супергруппу).
-    """
+@router.my_chat_member()
+async def on_my_chat_member(event: ChatMemberUpdated, db: types.Connection):
+    old = event.old_chat_member.status
+    new = event.new_chat_member.status
     chat = event.chat
-    title = chat.title or "без названия"
-    await add_group(db, chat_id=chat.id, title=title)
-    logger.info("Бот добавлен в группу: %s (%s)", title, chat.id)
 
+    # Бот добавлен в группу
+    if old in ("left", "kicked") and new in ("member", "administrator"):
+        await add_group(db, chat.id, chat.title or "")
+        logger.info(f"Бот добавлен в группу: {chat.title} ({chat.id})")
 
-@router.my_chat_member(LEAVE_FILTER)
-async def bot_removed_from_group(
-    event: ChatMemberUpdated, db: types.Connection
-):
-    """
-    Обрабатывает событие удаления бота из чата.
-    """
-    chat = event.chat
-    title = chat.title or "без названия"
-    await deactivate_group(db, chat_id=chat.id)
-    logger.info("Бот удалён из группы: %s (%s)", title, chat.id)
+    # Бот удалён из группы
+    elif old in ("member", "administrator") and new in ("left", "kicked"):
+        await deactivate_group(db, chat.id)
+        logger.info(f"Бот удалён из группы: {chat.title} ({chat.id})")
