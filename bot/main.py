@@ -7,7 +7,7 @@ from aiogram.filters import CommandStart
 
 from bot.config import get_settings
 from bot.db.models import init_db, get_db
-from bot.handlers import private
+from bot.handlers import private, group
 
 # ------------------------------------------------------------
 # Настройка логирования
@@ -47,13 +47,14 @@ async def main() -> None:
     
     # Подключаем роутеры
     dp.include_router(private.router)
+    dp.include_router(group.router)
 
     # 4. Сохранение объектов в workflow_data для доступа из хендлеров
     dp.workflow_data["bot"] = bot
     dp.workflow_data["db"] = db_conn
     dp.workflow_data["settings"] = settings
-    # также делаем доступ через прямой доступ по ключу (aiogram 3 поддерживает оба способа)
     dp["settings"] = settings
+    dp["db"] = db_conn  # гарантируем доступ через dp["db"]
 
     # 5. Запуск polling
     try:
