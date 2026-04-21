@@ -36,7 +36,15 @@ async def cmd_start(message: types.Message):
 async def main() -> None:
     # 1. Загрузка конфигурации
     settings = get_settings()
-    logger.info("Конфигурация загружена: %s", settings)
+    # Логируем только нужные поля, маскируя токен
+    masked_token = f"{settings.bot_token[:4]}...{settings.bot_token[-4:]}"
+    logger.info(
+        "Конфигурация загружена: admin_id=%s, contact_username=%s, database_path=%s, bot_token=%s",
+        settings.admin_id,
+        settings.contact_username,
+        settings.database_path,
+        masked_token,
+    )
 
     # 2. Инициализация БД
     # init_db возвращает соединение, которое будем хранить в workflow_data
