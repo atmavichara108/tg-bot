@@ -35,7 +35,6 @@ async def main() -> None:
     )
 
     # 2. Инициализация БД
-    # init_db возвращает соединение, которое будем хранить в workflow_data
     db_conn = await init_db(settings.database_path)
     logger.info("База данных инициализирована: %s", settings.database_path)
 
@@ -53,6 +52,8 @@ async def main() -> None:
     dp.workflow_data["bot"] = bot
     dp.workflow_data["db"] = db_conn
     dp.workflow_data["settings"] = settings
+    # также делаем доступ через прямой доступ по ключу (aiogram 3 поддерживает оба способа)
+    dp["settings"] = settings
 
     # 5. Запуск polling
     try:
