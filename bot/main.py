@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher, Router, types
+from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart
 
 from bot.config import get_settings
@@ -43,7 +44,10 @@ async def main() -> None:
     logger.info("База данных инициализирована: %s", settings.database_path)
 
     # 3. Создание Bot и Dispatcher
-    bot = Bot(token=settings.bot_token, parse_mode="HTML")
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode="HTML")
+    )
     dp = Dispatcher()
     dp.include_router(router)
 
