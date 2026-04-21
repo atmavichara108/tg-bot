@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart
 
 from bot.config import get_settings
 from bot.db.models import init_db, get_db
+from bot.handlers import private
 
 # ------------------------------------------------------------
 # Настройка логирования
@@ -16,19 +17,6 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# ------------------------------------------------------------
-# Хендлеры
-# ------------------------------------------------------------
-router = Router()
-
-
-@router.message(CommandStart())
-async def cmd_start(message: types.Message):
-    """Базовый хендлер на /start."""
-    await message.answer("Бот запущен")
-    logger.info("Отправлен ответ на /start пользователю %s", message.from_user.id)
-
 
 # ------------------------------------------------------------
 # Точка входа
@@ -57,11 +45,14 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode="HTML")
     )
     dp = Dispatcher()
-    dp.include_router(router)
+    
+    # Подключаем роутеры
+    dp.include_router(private.router)
 
     # 4. Сохранение объектов в workflow_data для доступа из хендлеров
     dp.workflow_data["bot"] = bot
     dp.workflow_data["db"] = db_conn
+    dp.workflow_data["settings"] = settings
 
     # 5. Запуск polling
     try:
