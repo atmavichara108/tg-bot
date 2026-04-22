@@ -1,5 +1,5 @@
 import logging
-from aiogram import Router, types
+from aiogram import Router
 from aiogram.types import ChatMemberUpdated
 from bot.db.queries import add_group, deactivate_group
 
@@ -8,7 +8,7 @@ router = Router(name="group")
 
 
 @router.my_chat_member()
-async def on_my_chat_member(event: ChatMemberUpdated, db: types.Connection):
+async def on_my_chat_member(event: ChatMemberUpdated, db):
     old = event.old_chat_member.status
     new = event.new_chat_member.status
     chat = event.chat
