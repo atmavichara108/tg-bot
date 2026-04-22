@@ -135,6 +135,7 @@ async def cb_msg_view(callback: CallbackQuery, db):
         return
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👁 Превью", callback_data=f"admin:msg_preview:{msg_id}")],
         [InlineKeyboardButton(text="✏️ Изменить текст", callback_data=f"admin:msg_edit_text:{msg_id}")],
         [InlineKeyboardButton(text="🖼 Изменить фото", callback_data=f"admin:msg_edit_photo:{msg_id}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin:msg_del:{msg_id}")],
@@ -148,6 +149,31 @@ async def cb_msg_view(callback: CallbackQuery, db):
     await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
+@router.callback_query(F.data.startswith("admin:msg_preview:"))
+async def cb_msg_preview(callback: CallbackQuery, db):
+    msg_id = int(callback.data.split(":")[2])
+    msg = await get_message_by_id(db, msg_id)
+    if not msg:
+        await callback.answer("Сообщение не найдено", show_alert=True)
+        return
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        back_btn(f"admin:msg:{msg_id}")
+    ])
+
+    if msg["photo_id"]:
+        await callback.message.delete()
+        await callback.message.answer_photo(
+            photo=msg["photo_id"],
+            caption=msg["text"] or "",
+        )
+        await callback.message.answer("⬆️ Так будет выглядеть в группе", reply_markup=kb)
+    else:
+        await callback.message.edit_text(
+            f"<b>Превью:</b>\n\n{msg['text']}",
+            reply_markup=kb,
+        )
+    await callback.answer()
 
 # ── Create message ──────────────────────────────────────────
 @router.callback_query(F.data == "admin:msg:new")
@@ -500,6 +526,7 @@ async def cb_post_start(callback: CallbackQuery, state: FSMContext, db):
 async def cb_post_pick_msg(callback: CallbackQuery, state: FSMContext, db):
     msg_id = int(callback.data.split(":")[2])
     await state.update_data(message_id=msg_id)
+    msg = await get_message_by_id(db, msg_id)
 
     groups = await get_active_groups(db)
     if not groups:
@@ -514,11 +541,25 @@ async def cb_post_pick_msg(callback: CallbackQuery, state: FSMContext, db):
             callback_data=f"admin:post_grp:{g['id']}:{g['chat_id']}"
         )])
     buttons.append(back_btn())
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # Показываем превью + выбор группы
+    if msg and msg["photo_id"]:
+        await callback.message.delete()
+        await callback.message.answer_photo(
+            photo=msg["photo_id"],
+            caption=msg["text"] or "",
+        )
+        await callback.message.answer("⬆️ Превью. Куда отправить:", reply_markup=kb)
+    else:
+        preview = msg["text"] if msg else "(пусто)"
+        await callback.message.edit_text(
+            f"<b>Превью:</b>\n{preview}\n\nКуда отправить:",
+            reply_markup=kb,
+        )
 
     await state.set_state(PostNow.choosing_groups)
-    await callback.message.edit_text("Куда отправить:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
-
 
 # ── Post now: send ──────────────────────────────────────────
 
