@@ -135,3 +135,81 @@ async def delete_message(db: aiosqlite.Connection, msg_id: int) -> None:
     await db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
     await db.commit()
 
+
+async def create_schedule(db: aiosqlite.Connection, message_id: int, group_id: int | None, cron_expr: str) -> int:
+    cursor = await db.execute(
+        "INSERT INTO schedules (message_id, group_id, cron_expr) VALUES (?, ?, ?)",
+        (message_id, group_id, cron_expr),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def get_all_schedules(db: aiosqlite.Connection) -> list[dict]:
+    db.row_factory = aiosqlite.Row
+    async with db.execute(
+        """
+        SELECT s.id, s.cron_expr, s.is_active, s.message_id, s.group_id,
+               m.text as msg_text,
+               g.title as group_title
+        FROM schedules s
+        LEFT JOIN messages m ON s.message_id = m.id
+        LEFT JOIN groups g ON s.group_id = g.id
+        ORDER BY s.id DESC
+        """
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_schedule_by_id(db: aiosqlite.Connection, schedule_id: int) -> dict | None:
+    db.row_factory = aiosqlite.Row
+    async with db.execute(
+        """
+        SELECT s.id, s.cron_expr, s.is_active, s.message_id, s.group_id,
+               m.text as msg_text, m.photo_id as msg_photo_id,
+               g.title as group_title
+        FROM schedules s
+        LEFT JOIN messages m ON s.message_id = m.id
+        LEFT JOIN groups g ON s.group_id = g.id
+        WHERE s.id = ?
+        """,
+        (schedule_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def toggle_schedule(db: aiosqlite.Connection, schedule_id: int) -> bool:
+    """Переключает is_active, возвращает новое значение."""
+    async with db.execute("SELECT is_active FROM schedules WHERE id = ?", (schedule_id,)) as cursor:
+        row = await cursor.fetchone()
+        if not row:
+            return False
+    new_val = 0 if row[0] else 1
+    await db.execute("UPDATE schedules SET is_active = ? WHERE id = ?", (new_val, schedule_id))
+    await db.commit()
+    return bool(new_val)
+
+
+async def delete_schedule(db: aiosqlite.Connection, schedule_id: int) -> None:
+    await db.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
+    await db.commit()
+
+
+async def get_active_schedules(db: aiosqlite.Connection) -> list[dict]:
+    """Все активные расписания — для scheduler'а."""
+    db.row_factory = aiosqlite.Row
+    async with db.execute(
+        """
+        SELECT s.id, s.cron_expr, s.message_id, s.group_id,
+               m.text as msg_text, m.photo_id as msg_photo_id,
+               g.chat_id as group_chat_id
+        FROM schedules s
+        JOIN messages m ON s.message_id = m.id
+        LEFT JOIN groups g ON s.group_id = g.id
+        WHERE s.is_active = 1
+        """
+    ) as cursor:
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]

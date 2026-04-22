@@ -13,6 +13,11 @@ from bot.db.queries import (
     update_message_text,
     update_message_photo,
     delete_message,
+    get_all_schedules,
+    get_schedule_by_id,
+    create_schedule,
+    toggle_schedule,
+    delete_schedule,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +33,12 @@ class CreateMsg(StatesGroup):
 class EditMsg(StatesGroup):
     waiting_text = State()
     waiting_photo = State()
+
+
+class CreateSchedule(StatesGroup):
+    choosing_message = State()
+    choosing_group = State()
+    waiting_cron = State()
 
 
 # ── Keyboards ───────────────────────────────────────────────
@@ -225,3 +236,154 @@ async def cb_msg_delete(callback: CallbackQuery, db):
     await delete_message(db, msg_id)
     await callback.message.edit_text(f"Сообщение #{msg_id} удалено.", reply_markup=main_menu_kb())
     await callback.answer()
+
+
+# ── Schedules list ──────────────────────────────────────────
+@router.callback_query(F.data == "admin:schedules")
+async def cb_schedules_list(callback: CallbackQuery, db):
+    scheds = await get_all_schedules(db)
+    buttons = []
+    for s in scheds:
+        preview = (s["msg_text"] or "")[:20]
+        group_name = s["group_title"] or "Все группы"
+        status = "✅" if s["is_active"] else "⏸"
+        buttons.append([InlineKeyboardButton(
+            text=f"{status} {preview} → {group_name} [{s['cron_expr']}]",
+            callback_data=f"admin:sched:{s['id']}"
+        )])
+    buttons.append([InlineKeyboardButton(text="➕ Создать", callback_data="admin:sched:new")])
+    buttons.append(back_btn())
+    await callback.message.edit_text(
+        "Расписания:" if scheds else "Нет расписаний.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await callback.answer()
+
+
+# ── View schedule ───────────────────────────────────────────
+@router.callback_query(F.data.regexp(r"^admin:sched:\d+$"))
+async def cb_sched_view(callback: CallbackQuery, db):
+    sched_id = int(callback.data.split(":")[2])
+    s = await get_schedule_by_id(db, sched_id)
+    if not s:
+        await callback.answer("Не найдено", show_alert=True)
+        return
+
+    status = "✅ Активно" if s["is_active"] else "⏸ На паузе"
+    group_name = s["group_title"] or "Все группы"
+    text = (
+        f"<b>Расписание #{s['id']}</b>\n\n"
+        f"Сообщение: #{s['message_id']} — {(s['msg_text'] or '')[:40]}\n"
+        f"Группа: {group_name}\n"
+        f"Cron: <code>{s['cron_expr']}</code>\n"
+        f"Статус: {status}"
+    )
+
+    toggle_text = "⏸ Пауза" if s["is_active"] else "▶️ Включить"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=toggle_text, callback_data=f"admin:sched_toggle:{sched_id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin:sched_del:{sched_id}")],
+        back_btn("admin:schedules"),
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
+
+
+# ── Toggle schedule ─────────────────────────────────────────
+@router.callback_query(F.data.startswith("admin:sched_toggle:"))
+async def cb_sched_toggle(callback: CallbackQuery, db):
+    sched_id = int(callback.data.split(":")[2])
+    new_state = await toggle_schedule(db, sched_id)
+    status = "включено" if new_state else "на паузе"
+    await callback.answer(f"Расписание #{sched_id} — {status}")
+    # Перерисовать карточку
+    await cb_sched_view(callback, db)
+
+
+# ── Delete schedule ─────────────────────────────────────────
+@router.callback_query(F.data.startswith("admin:sched_del:"))
+async def cb_sched_delete(callback: CallbackQuery, db):
+    sched_id = int(callback.data.split(":")[2])
+    await delete_schedule(db, sched_id)
+    await callback.message.edit_text(f"Расписание #{sched_id} удалено.", reply_markup=main_menu_kb())
+    await callback.answer()
+
+
+# ── Create schedule: step 1 — choose message ───────────────
+@router.callback_query(F.data == "admin:sched:new")
+async def cb_sched_new(callback: CallbackQuery, state: FSMContext, db):
+    msgs = await get_all_messages(db)
+    if not msgs:
+        await callback.answer("Сначала создайте хотя бы одно сообщение.", show_alert=True)
+        return
+
+    buttons = []
+    for m in msgs:
+        preview = (m["text"] or "")[:30]
+        buttons.append([InlineKeyboardButton(
+            text=f"#{m['id']} {preview}",
+            callback_data=f"admin:sched_pick_msg:{m['id']}"
+        )])
+    buttons.append(back_btn("admin:schedules"))
+
+    await state.set_state(CreateSchedule.choosing_message)
+    await callback.message.edit_text("Выберите сообщение:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+# ── Create schedule: step 2 — choose group ─────────────────
+@router.callback_query(CreateSchedule.choosing_message, F.data.startswith("admin:sched_pick_msg:"))
+async def cb_sched_pick_msg(callback: CallbackQuery, state: FSMContext, db):
+    msg_id = int(callback.data.split(":")[2])
+    await state.update_data(message_id=msg_id)
+
+    groups = await get_active_groups(db)
+    buttons = [[InlineKeyboardButton(text="📢 Все группы", callback_data="admin:sched_pick_grp:all")]]
+    for g in groups:
+        buttons.append([InlineKeyboardButton(
+            text=g["title"],
+            callback_data=f"admin:sched_pick_grp:{g['id']}"
+        )])
+    buttons.append(back_btn("admin:schedules"))
+
+    await state.set_state(CreateSchedule.choosing_group)
+    await callback.message.edit_text("Куда отправлять:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+# ── Create schedule: step 3 — cron expression ──────────────
+@router.callback_query(CreateSchedule.choosing_group, F.data.startswith("admin:sched_pick_grp:"))
+async def cb_sched_pick_grp(callback: CallbackQuery, state: FSMContext):
+    val = callback.data.split(":")[2]
+    group_id = None if val == "all" else int(val)
+    await state.update_data(group_id=group_id)
+    await state.set_state(CreateSchedule.waiting_cron)
+    await callback.message.edit_text(
+        "Введите cron-выражение.\n\n"
+        "Примеры:\n"
+        "<code>0 9 * * *</code> — каждый день в 9:00\n"
+        "<code>0 9,18 * * *</code> — в 9:00 и 18:00\n"
+        "<code>0 10 * * 1-5</code> — будни в 10:00\n"
+        "<code>*/30 * * * *</code> — каждые 30 минут\n\n"
+        "Или /cancel для отмены."
+    )
+    await callback.answer()
+
+
+@router.message(CreateSchedule.waiting_cron, F.text)
+async def on_sched_cron(message: types.Message, state: FSMContext, db):
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer("Отменено.", reply_markup=main_menu_kb())
+        return
+
+    cron = message.text.strip()
+    parts = cron.split()
+    if len(parts) != 5:
+        await message.answer("Нужно 5 полей: минута час день месяц день_недели. Попробуй ещё раз.")
+        return
+
+    data = await state.get_data()
+    sched_id = await create_schedule(db, data["message_id"], data["group_id"], cron)
+    await state.clear()
+    await message.answer(f"Расписание #{sched_id} создано.", reply_markup=main_menu_kb())
