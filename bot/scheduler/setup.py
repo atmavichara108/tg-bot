@@ -51,7 +51,7 @@ async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_id: in
         except Exception as e:
             logger.error(f"Sched #{s['id']}: ошибка создания джобы: {e}")
 
-    logger.info(f"Загружено расписаний: {len(scheduler.get_jobs())}")
+    logger.info(f"Загружено расписаний: {len(scheduler.get_jobs())-1}")
 
 
 def create_scheduler(bot: Bot, db, admin_id: int) -> AsyncIOScheduler:

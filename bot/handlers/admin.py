@@ -521,9 +521,11 @@ async def cb_post_pick_msg(callback: CallbackQuery, state: FSMContext, db):
 
 
 # ── Post now: send ──────────────────────────────────────────
+
 @router.callback_query(PostNow.choosing_groups, F.data.startswith("admin:post_grp:"))
 async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
     from bot.scheduler.broadcaster import send_to_chat
+    from bot.utils.notify import notify_admin
 
     data = await state.get_data()
     msg = await get_message_by_id(db, data["message_id"])
@@ -551,8 +553,10 @@ async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
             failed += 1
 
     await state.clear()
-    result = f"Отправлено: {sent}"
+    result = f"📨 Ручная отправка\nОтправлено: {sent}"
     if failed:
         result += f"\nОшибки: {failed}"
+
+    await notify_admin(bot, callback.from_user.id, result)
     await callback.message.edit_text(result, reply_markup=main_menu_kb())
     await callback.answer()
