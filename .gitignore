@@ -6,3 +6,4 @@ media/*
 !media/.gitkeep
 .aider*
 !.aider.conf.yml
+bot.db-*
