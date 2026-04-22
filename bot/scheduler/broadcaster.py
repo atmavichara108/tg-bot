@@ -15,16 +15,17 @@ from bot.db.queries import (
     set_group_flood_until,
     get_group_flood_until,
 )
+from bot.utils.notify import notify_admin
 
 logger = logging.getLogger(__name__)
 
 MAX_ERRORS = 5
 
 
-async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | None) -> bool:
+async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | None,
+                        admin_id: int = None) -> bool:
     """Отправляет сообщение в один чат. Возвращает True при успехе."""
 
-    # Проверяем flood cooldown
     flood_until = await get_group_flood_until(db, chat_id)
     if flood_until > time.time():
         wait = int(flood_until - time.time())
@@ -49,6 +50,9 @@ async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | No
     except TelegramForbiddenError:
         await deactivate_group(db, chat_id)
         logger.warning(f"Chat {chat_id}: бот заблокирован/кикнут, группа деактивирована")
+        if admin_id:
+            await notify_admin(bot, admin_id,
+                f"⚠️ Группа {chat_id} деактивирована — бот заблокирован или удалён из группы.")
         return False
 
     except TelegramBadRequest as e:
@@ -62,6 +66,9 @@ async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | No
         if errors >= MAX_ERRORS:
             await deactivate_group(db, chat_id)
             logger.warning(f"Chat {chat_id}: {errors} ошибок подряд, группа деактивирована")
+            if admin_id:
+                await notify_admin(bot, admin_id,
+                    f"⚠️ Группа {chat_id} деактивирована — {errors} ошибок подряд.")
         return False
 
     except Exception as e:
@@ -70,13 +77,16 @@ async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | No
         if errors >= MAX_ERRORS:
             await deactivate_group(db, chat_id)
             logger.warning(f"Chat {chat_id}: {errors} ошибок подряд, группа деактивирована")
+            if admin_id:
+                await notify_admin(bot, admin_id,
+                    f"⚠️ Группа {chat_id} деактивирована — {errors} ошибок подряд.")
         return False
 
 
-async def send_scheduled(bot: Bot, db, schedule_id: int, message_id: int,
+async def send_scheduled(bot: Bot, db, admin_id: int, schedule_id: int, message_id: int,
                          msg_text: str, msg_photo_id: str | None,
                          group_chat_id: int | None):
-    """Отправляет запланированное сообщение."""
+    """Отправляет запланированное сообщение + уведомляет админа."""
     if group_chat_id:
         chat_ids = [group_chat_id]
     else:
@@ -85,11 +95,18 @@ async def send_scheduled(bot: Bot, db, schedule_id: int, message_id: int,
     sent = 0
     failed = 0
     for chat_id in chat_ids:
-        success = await send_to_chat(bot, db, chat_id, msg_text, msg_photo_id)
+        success = await send_to_chat(bot, db, chat_id, msg_text, msg_photo_id, admin_id=admin_id)
         if success:
             sent += 1
         else:
             failed += 1
 
     logger.info(f"Sched #{schedule_id}: отправлено {sent}, ошибки {failed}")
+
+    # Отчёт админу
+    report = f"📬 Расписание #{schedule_id}\nОтправлено: {sent}"
+    if failed:
+        report += f"\nОшибки: {failed}"
+    await notify_admin(bot, admin_id, report)
+
     return sent, failed

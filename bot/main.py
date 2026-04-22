@@ -63,8 +63,8 @@ async def main() -> None:
     dp["db"] = db_conn  # гарантируем доступ через dp["db"]
 
     # 5. Запуск планировщика
-    scheduler = create_scheduler(bot, db_conn)
-    await load_schedules(scheduler, bot, db_conn)
+    scheduler = create_scheduler(bot, db_conn, settings.admin_id)
+    await load_schedules(scheduler, bot, db_conn, settings.admin_id)
     scheduler.start()
     logger.info("Планировщик запущен")
 
