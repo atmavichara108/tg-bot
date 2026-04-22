@@ -20,6 +20,11 @@ from bot.db.queries import (
     delete_schedule,
     get_all_active_group_chat_ids,
 )
+    from bot.handlers.schedule_ui import (
+    days_keyboard, hours_keyboard, minutes_keyboard, confirm_keyboard,
+    days_to_cron, days_display,
+)
+
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -39,7 +44,10 @@ class EditMsg(StatesGroup):
 class CreateSchedule(StatesGroup):
     choosing_message = State()
     choosing_group = State()
-    waiting_cron = State()
+    choosing_days = State()
+    choosing_hour = State()
+    choosing_minute = State()
+    confirming = State()
 
 
 class PostNow(StatesGroup):
@@ -358,125 +366,107 @@ async def cb_sched_pick_msg(callback: CallbackQuery, state: FSMContext, db):
     await callback.answer()
 
 
-# ── Create schedule: step 3 — cron expression ──────────────
+# ── Create schedule: step 3 — choose days ──────────────────
 @router.callback_query(CreateSchedule.choosing_group, F.data.startswith("admin:sched_pick_grp:"))
 async def cb_sched_pick_grp(callback: CallbackQuery, state: FSMContext):
     val = callback.data.split(":")[2]
     group_id = None if val == "all" else int(val)
-    await state.update_data(group_id=group_id)
-    await state.set_state(CreateSchedule.waiting_cron)
+    await state.update_data(group_id=group_id, selected_days=set())
+    await state.set_state(CreateSchedule.choosing_days)
+    await callback.message.edit_text("Выберите дни недели:", reply_markup=days_keyboard(set()))
+    await callback.answer()
+
+
+@router.callback_query(CreateSchedule.choosing_days, F.data.startswith("sched_day:"))
+async def cb_sched_toggle_day(callback: CallbackQuery, state: FSMContext):
+    val = callback.data.split(":")[1]
+    data = await state.get_data()
+    selected = set(data.get("selected_days", []))
+
+    if val == "all":
+        selected = {"0", "1", "2", "3", "4", "5", "6"}
+    elif val == "weekdays":
+        selected = {"1", "2", "3", "4", "5"}
+    elif val in selected:
+        selected.discard(val)
+    else:
+        selected.add(val)
+
+    await state.update_data(selected_days=selected)
+    await callback.message.edit_reply_markup(reply_markup=days_keyboard(selected))
+    await callback.answer()
+
+
+@router.callback_query(CreateSchedule.choosing_days, F.data == "sched_days_done")
+async def cb_sched_days_done(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(CreateSchedule.choosing_hour)
+    await callback.message.edit_text("Выберите час:", reply_markup=hours_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(CreateSchedule.choosing_days, F.data == "sched_back_days")
+async def cb_sched_back_to_days_from_days(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = set(data.get("selected_days", []))
+    await callback.message.edit_text("Выберите дни недели:", reply_markup=days_keyboard(selected))
+    await callback.answer()
+
+
+# ── Create schedule: step 4 — choose hour ──────────────────
+@router.callback_query(CreateSchedule.choosing_hour, F.data.startswith("sched_hour:"))
+async def cb_sched_pick_hour(callback: CallbackQuery, state: FSMContext):
+    hour = int(callback.data.split(":")[1])
+    await state.update_data(hour=hour)
+    await state.set_state(CreateSchedule.choosing_minute)
+    await callback.message.edit_text(f"Час: {hour:02d}\nВыберите минуты:", reply_markup=minutes_keyboard(hour))
+    await callback.answer()
+
+
+@router.callback_query(CreateSchedule.choosing_hour, F.data == "sched_back_days")
+async def cb_sched_back_to_days(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = set(data.get("selected_days", []))
+    await state.set_state(CreateSchedule.choosing_days)
+    await callback.message.edit_text("Выберите дни недели:", reply_markup=days_keyboard(selected))
+    await callback.answer()
+
+
+# ── Create schedule: step 5 — choose minute ────────────────
+@router.callback_query(CreateSchedule.choosing_minute, F.data.startswith("sched_min:"))
+async def cb_sched_pick_min(callback: CallbackQuery, state: FSMContext):
+    minute = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    hour = data["hour"]
+    selected_days = set(data.get("selected_days", []))
+
+    days_text = days_display(selected_days)
+    cron = f"{minute} {hour} * * {days_to_cron(selected_days)}"
+
+    await state.update_data(minute=minute, cron_expr=cron)
+    await state.set_state(CreateSchedule.confirming)
+
     await callback.message.edit_text(
-        "Введите cron-выражение.\n\n"
-        "Примеры:\n"
-        "<code>0 9 * * *</code> — каждый день в 9:00\n"
-        "<code>0 9,18 * * *</code> — в 9:00 и 18:00\n"
-        "<code>0 10 * * 1-5</code> — будни в 10:00\n"
-        "<code>*/30 * * * *</code> — каждые 30 минут\n\n"
-        "Или /cancel для отмены."
+        f"<b>Подтвердите расписание:</b>\n\n"
+        f"Дни: {days_text}\n"
+        f"Время: {hour:02d}:{minute:02d}\n\n"
+        f"<code>{cron}</code>",
+        reply_markup=confirm_keyboard(),
     )
     await callback.answer()
 
 
-@router.message(CreateSchedule.waiting_cron, F.text)
-async def on_sched_cron(message: types.Message, state: FSMContext, db):
-    if message.text == "/cancel":
-        await state.clear()
-        await message.answer("Отменено.", reply_markup=main_menu_kb())
-        return
-
-    cron = message.text.strip()
-    parts = cron.split()
-    if len(parts) != 5:
-        await message.answer("Нужно 5 полей: минута час день месяц день_недели. Попробуй ещё раз.")
-        return
-
-    data = await state.get_data()
-    sched_id = await create_schedule(db, data["message_id"], data["group_id"], cron)
-    await state.clear()
-    await message.answer(f"Расписание #{sched_id} создано.", reply_markup=main_menu_kb())
-
-
-# ── Post now: step 1 — choose message ──────────────────────
-@router.callback_query(F.data == "admin:post")
-async def cb_post_start(callback: CallbackQuery, state: FSMContext, db):
-    msgs = await get_all_messages(db)
-    if not msgs:
-        await callback.answer("Сначала создайте сообщение.", show_alert=True)
-        return
-
-    buttons = []
-    for m in msgs:
-        preview = (m["text"] or "")[:30]
-        photo_mark = " 🖼" if m["photo_id"] else ""
-        buttons.append([InlineKeyboardButton(
-            text=f"#{m['id']} {preview}{photo_mark}",
-            callback_data=f"admin:post_msg:{m['id']}"
-        )])
-    buttons.append(back_btn())
-
-    await state.set_state(PostNow.choosing_message)
-    await callback.message.edit_text("Выберите сообщение для отправки:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+@router.callback_query(CreateSchedule.choosing_minute, F.data == "sched_back_hours")
+async def cb_sched_back_to_hours(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(CreateSchedule.choosing_hour)
+    await callback.message.edit_text("Выберите час:", reply_markup=hours_keyboard())
     await callback.answer()
 
 
-# ── Post now: step 2 — choose groups ───────────────────────
-@router.callback_query(PostNow.choosing_message, F.data.startswith("admin:post_msg:"))
-async def cb_post_pick_msg(callback: CallbackQuery, state: FSMContext, db):
-    msg_id = int(callback.data.split(":")[2])
-    await state.update_data(message_id=msg_id)
-
-    groups = await get_active_groups(db)
-    if not groups:
-        await callback.answer("Нет активных групп.", show_alert=True)
-        await state.clear()
-        return
-
-    buttons = [[InlineKeyboardButton(text="📢 Все группы", callback_data="admin:post_grp:all")]]
-    for g in groups:
-        buttons.append([InlineKeyboardButton(
-            text=g["title"],
-            callback_data=f"admin:post_grp:{g['id']}:{g['chat_id']}"
-        )])
-    buttons.append(back_btn())
-
-    await state.set_state(PostNow.choosing_groups)
-    await callback.message.edit_text("Куда отправить:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
-
-
-# ── Post now: send ──────────────────────────────────────────
-@router.callback_query(PostNow.choosing_groups, F.data.startswith("admin:post_grp:"))
-async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
-    from bot.scheduler.broadcaster import send_to_chat
-
+# ── Create schedule: confirm ────────────────────────────────
+@router.callback_query(CreateSchedule.confirming, F.data == "sched_confirm")
+async def cb_sched_confirm(callback: CallbackQuery, state: FSMContext, db):
     data = await state.get_data()
-    msg = await get_message_by_id(db, data["message_id"])
-    if not msg:
-        await callback.answer("Сообщение не найдено.", show_alert=True)
-        await state.clear()
-        return
-
-    val = callback.data.replace("admin:post_grp:", "")
-    if val == "all":
-        chat_ids = await get_all_active_group_chat_ids(db)
-    else:
-        parts = val.split(":")
-        chat_ids = [int(parts[1])]
-
-    bot = callback.bot
-    sent = 0
-    failed = 0
-
-    for chat_id in chat_ids:
-        success = await send_to_chat(bot, db, chat_id, msg["text"], msg["photo_id"])
-        if success:
-            sent += 1
-        else:
-            failed += 1
-
+    sched_id = await create_schedule(db, data["message_id"], data["group_id"], data["cron_expr"])
     await state.clear()
-    result = f"Отправлено: {sent}"
-    if failed:
-        result += f"\nОшибки: {failed}"
-    await callback.message.edit_text(result, reply_markup=main_menu_kb())
+    await callback.message.edit_text(f"Расписание #{sched_id} создано.", reply_markup=main_menu_kb())
     await callback.answer()
