@@ -9,6 +9,8 @@ from bot.config import get_settings
 from bot.db.models import init_db, get_db
 from bot.handlers import private, group, admin
 from bot.middlewares.auth import AdminMiddleware
+from bot.scheduler.setup import create_scheduler, load_schedules
+
 
 # ------------------------------------------------------------
 # Настройка логирования
@@ -60,12 +62,19 @@ async def main() -> None:
     dp["settings"] = settings
     dp["db"] = db_conn  # гарантируем доступ через dp["db"]
 
-    # 5. Запуск polling
+    # 5. Запуск планировщика
+    scheduler = create_scheduler(bot, db_conn)
+    await load_schedules(scheduler, bot, db_conn)
+    scheduler.start()
+    logger.info("Планировщик запущен")
+
+    # 6. Запуск polling
     try:
         logger.info("Запуск polling...")
         await dp.start_polling(bot)
     finally:
         # Корректное закрытие соединения с БД при завершении
+        scheduler.shutdown(wait=False)
         await db_conn.close()
         await bot.session.close()
         logger.info("Остановлен polling, соединения закрыты.")
