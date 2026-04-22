@@ -7,7 +7,8 @@ from aiogram.filters import CommandStart
 
 from bot.config import get_settings
 from bot.db.models import init_db, get_db
-from bot.handlers import private, group
+from bot.handlers import private, group, admin
+from bot.middlewares.auth import AdminMiddleware
 
 # ------------------------------------------------------------
 # Настройка логирования
@@ -46,6 +47,9 @@ async def main() -> None:
     dp = Dispatcher()
     
     # Подключаем роутеры
+    admin.router.message.middleware(AdminMiddleware(settings.admin_id))
+    admin.router.callback_query.middleware(AdminMiddleware(settings.admin_id))
+    dp.include_router(admin.router)
     dp.include_router(private.router)
     dp.include_router(group.router)
 
