@@ -1,0 +1,8 @@
+.env
+.venv/
+*.db
+__pycache__/
+media/*
+!media/.gitkeep
+.aider*
+!.aider.conf.yml

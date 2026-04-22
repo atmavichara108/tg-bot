@@ -1,0 +1,30 @@
+# Основная модель — лучшая бесплатная кодинг-модель на OpenRouter
+model: openrouter/openrouter/free
+
+# Слабая модель для коммит-сообщений и суммаризации
+weak-model: openrouter/openrouter/free
+
+# Тёмная тема (у тебя Alacritty с Nord)
+dark-mode: true
+
+# VI-режим (ты на Neovim, тебе привычнее)
+vim: true
+
+# Авто-коммиты — главная фишка Aider
+auto-commits: true
+
+# Показывать диффы при коммите
+show-diffs: true
+
+# Префикс в коммит-сообщениях чтобы отличать AI-коммиты
+attribute-commit-message-author: true
+
+# Repo map — Aider строит карту репозитория для контекста
+# 1024 токена по умолчанию, для твоего проекта хватит
+map-tokens: 1024
+
+# Язык общения
+chat-language: ru
+
+# Редактор для /editor команды
+editor: nvim
