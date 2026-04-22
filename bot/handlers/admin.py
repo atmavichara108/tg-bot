@@ -447,7 +447,7 @@ async def cb_post_pick_msg(callback: CallbackQuery, state: FSMContext, db):
 # ── Post now: send ──────────────────────────────────────────
 @router.callback_query(PostNow.choosing_groups, F.data.startswith("admin:post_grp:"))
 async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
-    from aiogram import Bot
+    from bot.scheduler.broadcaster import send_to_chat
 
     data = await state.get_data()
     msg = await get_message_by_id(db, data["message_id"])
@@ -456,7 +456,6 @@ async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
         await state.clear()
         return
 
-    # Определяем список chat_id для отправки
     val = callback.data.replace("admin:post_grp:", "")
     if val == "all":
         chat_ids = await get_all_active_group_chat_ids(db)
@@ -464,19 +463,15 @@ async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
         parts = val.split(":")
         chat_ids = [int(parts[1])]
 
-    bot: Bot = callback.bot
+    bot = callback.bot
     sent = 0
     failed = 0
 
     for chat_id in chat_ids:
-        try:
-            if msg["photo_id"]:
-                await bot.send_photo(chat_id=chat_id, photo=msg["photo_id"], caption=msg["text"])
-            else:
-                await bot.send_message(chat_id=chat_id, text=msg["text"])
+        success = await send_to_chat(bot, db, chat_id, msg["text"], msg["photo_id"])
+        if success:
             sent += 1
-        except Exception as e:
-            logger.error(f"Ошибка отправки в {chat_id}: {e}")
+        else:
             failed += 1
 
     await state.clear()

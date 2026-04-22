@@ -220,3 +220,59 @@ async def get_all_active_group_chat_ids(db: aiosqlite.Connection) -> list[int]:
         rows = await cursor.fetchall()
         return [r[0] for r in rows]
 
+
+async def increment_group_errors(db: aiosqlite.Connection, chat_id: int) -> int:
+    """Увеличивает счётчик ошибок, возвращает новое значение."""
+    await db.execute(
+        """
+        UPDATE groups
+        SET settings = json_set(
+            COALESCE(settings, '{}'),
+            '$.error_count',
+            COALESCE(json_extract(settings, '$.error_count'), 0) + 1
+        )
+        WHERE chat_id = ?
+        """,
+        (chat_id,),
+    )
+    await db.commit()
+    async with db.execute(
+        "SELECT json_extract(settings, '$.error_count') FROM groups WHERE chat_id = ?",
+        (chat_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] else 0
+
+
+async def reset_group_errors(db: aiosqlite.Connection, chat_id: int) -> None:
+    await db.execute(
+        """
+        UPDATE groups
+        SET settings = json_set(COALESCE(settings, '{}'), '$.error_count', 0)
+        WHERE chat_id = ?
+        """,
+        (chat_id,),
+    )
+    await db.commit()
+
+
+async def set_group_flood_until(db: aiosqlite.Connection, chat_id: int, timestamp: float) -> None:
+    """Запоминает до какого момента группа заблокирована FloodWait."""
+    await db.execute(
+        """
+        UPDATE groups
+        SET settings = json_set(COALESCE(settings, '{}'), '$.flood_until', ?)
+        WHERE chat_id = ?
+        """,
+        (timestamp, chat_id),
+    )
+    await db.commit()
+
+
+async def get_group_flood_until(db: aiosqlite.Connection, chat_id: int) -> float:
+    async with db.execute(
+        "SELECT json_extract(settings, '$.flood_until') FROM groups WHERE chat_id = ?",
+        (chat_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+        return float(row[0]) if row and row[0] else 0.0
