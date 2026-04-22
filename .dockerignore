@@ -1,0 +1,8 @@
+.venv/
+.env
+.git/
+.gitignore
+.aider*
+__pycache__/
+*.db
+media/
