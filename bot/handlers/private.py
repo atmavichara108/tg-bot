@@ -18,7 +18,7 @@ async def cmd_start_private(message: types.Message, settings: Settings):
 async def handle_all_private(message: types.Message, settings: Settings):
     """Обработка всех остальных сообщений в личке."""
     contact = settings.contact_username or "не указан"
-    await message.answer(f"Для связи пишите: @{contact}")
+    await message.answer(f"Для связи пишите: {contact}")
 
     logger.info(
         "Личное сообщение: user_id=%s, username=%s, text=%s",
