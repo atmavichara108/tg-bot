@@ -11,7 +11,7 @@ router = Router(name="private")
 async def cmd_start_private(message: types.Message, settings: Settings):
     """Приветствие в личных сообщениях."""
     contact = settings.contact_username or "не указан"
-    await message.answer(f"Привет! Если хочешь связаться — пиши @{contact}")
+    await message.answer(f"Привет! Если хочешь связаться — пиши {contact}")
 
 
 @router.message(F.chat.type == "private")
