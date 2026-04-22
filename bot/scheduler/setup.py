@@ -9,7 +9,7 @@ from bot.scheduler.broadcaster import send_scheduled
 logger = logging.getLogger(__name__)
 
 
-async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_id: int):
+async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_ids: list[int]):
     for job in scheduler.get_jobs():
         if job.id != "reload_schedules":
             job.remove()
@@ -39,7 +39,7 @@ async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_id: in
                 kwargs={
                     "bot": bot,
                     "db": db,
-                    "admin_id": admin_id,
+                    "admin_ids": admin_ids,
                     "schedule_id": s["id"],
                     "message_id": s["message_id"],
                     "msg_text": s["msg_text"],
@@ -54,7 +54,7 @@ async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_id: in
     logger.info(f"Загружено расписаний: {len(scheduler.get_jobs())-1}")
 
 
-def create_scheduler(bot: Bot, db, admin_id: int) -> AsyncIOScheduler:
+def create_scheduler(bot: Bot, db, admin_ids: list[int]) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
     scheduler.add_job(
@@ -62,7 +62,7 @@ def create_scheduler(bot: Bot, db, admin_id: int) -> AsyncIOScheduler:
         "interval",
         seconds=60,
         id="reload_schedules",
-        kwargs={"scheduler": scheduler, "bot": bot, "db": db, "admin_id": admin_id},
+        kwargs={"scheduler": scheduler, "bot": bot, "db": db, "admin_ids": admin_ids},
     )
 
     return scheduler

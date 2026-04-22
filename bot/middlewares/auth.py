@@ -5,10 +5,8 @@ from aiogram.types import TelegramObject, Message, CallbackQuery
 
 
 class AdminMiddleware(BaseMiddleware):
-    """Пропускает только сообщения/колбэки от админа в хендлеры админ-роутера."""
-
-    def __init__(self, admin_id: int):
-        self.admin_id = admin_id
+    def __init__(self, admin_ids: list[int]):
+        self.admin_ids = admin_ids
 
     async def __call__(
         self,
@@ -22,6 +20,5 @@ class AdminMiddleware(BaseMiddleware):
         elif isinstance(event, CallbackQuery):
             user = event.from_user
 
-        if user and user.id == self.admin_id:
+        if user and user.id in self.admin_ids:
             return await handler(event, data)
-        # Не админ — молча игнорируем

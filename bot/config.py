@@ -1,47 +1,43 @@
 # Модуль конфигурации
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 
 @dataclass
 class Settings:
-    """Настройки бота, загружаемые из переменных окружения."""
     bot_token: str
-    admin_id: int
-    contact_username: str
+    admin_ids: list[int] = field(default_factory=list)
+    contact_username: str = ""
     database_path: str = "bot.db"
 
 
 def get_settings() -> Settings:
-    """
-    Загружает параметры из переменных окружения и возвращает объект Settings.
-    
-    Raises:
-        ValueError: Если bot_token или admin_id не заданы в переменных окружения.
-    """
     load_dotenv()
-    
+
     bot_token = os.getenv("BOT_TOKEN")
-    admin_id = os.getenv("ADMIN_ID")
+    admin_ids_raw = os.getenv("ADMIN_ID", "")
     contact_username = os.getenv("CONTACT_USERNAME", "")
     database_path = os.getenv("DATABASE_PATH", "bot.db")
-    
+
     if not bot_token:
         raise ValueError("Переменная окружения BOT_TOKEN не задана")
-    
-    if not admin_id:
+
+    if not admin_ids_raw:
         raise ValueError("Переменная окружения ADMIN_ID не задана")
-    
+
     try:
-        admin_id = int(admin_id)
+        admin_ids = [int(x.strip()) for x in admin_ids_raw.split(",") if x.strip()]
     except ValueError:
-        raise ValueError(f"Переменная ADMIN_ID должна быть числом, получено: {admin_id}")
-    
+        raise ValueError(f"ADMIN_ID должен содержать числа через запятую, получено: {admin_ids_raw}")
+
+    if not admin_ids:
+        raise ValueError("ADMIN_ID не содержит ни одного валидного ID")
+
     return Settings(
         bot_token=bot_token,
-        admin_id=admin_id,
+        admin_ids=admin_ids,
         contact_username=contact_username,
         database_path=database_path,
     )

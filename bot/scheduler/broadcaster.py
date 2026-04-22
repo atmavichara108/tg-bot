@@ -23,7 +23,7 @@ MAX_ERRORS = 5
 
 
 async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | None,
-                        admin_id: int = None) -> bool:
+                        admin_ids: list[int] = None) -> bool:
     """Отправляет сообщение в один чат. Возвращает True при успехе."""
 
     flood_until = await get_group_flood_until(db, chat_id)
@@ -50,8 +50,8 @@ async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | No
     except TelegramForbiddenError:
         await deactivate_group(db, chat_id)
         logger.warning(f"Chat {chat_id}: бот заблокирован/кикнут, группа деактивирована")
-        if admin_id:
-            await notify_admin(bot, admin_id,
+        if admin_ids:
+            await notify_admin(bot, admin_ids,
                 f"⚠️ Группа {chat_id} деактивирована — бот заблокирован или удалён из группы.")
         return False
 
@@ -66,8 +66,8 @@ async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | No
         if errors >= MAX_ERRORS:
             await deactivate_group(db, chat_id)
             logger.warning(f"Chat {chat_id}: {errors} ошибок подряд, группа деактивирована")
-            if admin_id:
-                await notify_admin(bot, admin_id,
+            if admin_ids:
+                await notify_admin(bot, admin_ids,
                     f"⚠️ Группа {chat_id} деактивирована — {errors} ошибок подряд.")
         return False
 
@@ -77,13 +77,13 @@ async def send_to_chat(bot: Bot, db, chat_id: int, text: str, photo_id: str | No
         if errors >= MAX_ERRORS:
             await deactivate_group(db, chat_id)
             logger.warning(f"Chat {chat_id}: {errors} ошибок подряд, группа деактивирована")
-            if admin_id:
-                await notify_admin(bot, admin_id,
+            if admin_ids:
+                await notify_admin(bot, admin_ids,
                     f"⚠️ Группа {chat_id} деактивирована — {errors} ошибок подряд.")
         return False
 
 
-async def send_scheduled(bot: Bot, db, admin_id: int, schedule_id: int, message_id: int,
+async def send_scheduled(bot: Bot, db, admin_ids: list[int], schedule_id: int, message_id: int,
                          msg_text: str, msg_photo_id: str | None,
                          group_chat_id: int | None):
     """Отправляет запланированное сообщение + уведомляет админа."""
@@ -95,7 +95,7 @@ async def send_scheduled(bot: Bot, db, admin_id: int, schedule_id: int, message_
     sent = 0
     failed = 0
     for chat_id in chat_ids:
-        success = await send_to_chat(bot, db, chat_id, msg_text, msg_photo_id, admin_id=admin_id)
+        success = await send_to_chat(bot, db, chat_id, msg_text, msg_photo_id, admin_ids=admin_ids)
         if success:
             sent += 1
         else:
@@ -107,6 +107,6 @@ async def send_scheduled(bot: Bot, db, admin_id: int, schedule_id: int, message_
     report = f"📬 Расписание #{schedule_id}\nОтправлено: {sent}"
     if failed:
         report += f"\nОшибки: {failed}"
-    await notify_admin(bot, admin_id, report)
+    await notify_admin(bot, admin_ids, report)
 
     return sent, failed

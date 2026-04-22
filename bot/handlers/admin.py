@@ -587,7 +587,7 @@ async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
     failed = 0
 
     for chat_id in chat_ids:
-        success = await send_to_chat(bot, db, chat_id, msg["text"], msg["photo_id"], admin_id=callback.from_user.id)
+        success = await send_to_chat(bot, db, chat_id, msg["text"], msg["photo_id"], admin_ids=[callback.from_user.id])
         if success:
             sent += 1
         else:

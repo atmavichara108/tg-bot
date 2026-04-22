@@ -30,8 +30,8 @@ async def main() -> None:
     # Логируем только нужные поля, маскируя токен
     masked_token = f"{settings.bot_token[:4]}...{settings.bot_token[-4:]}"
     logger.info(
-        "Конфигурация загружена: admin_id=%s, contact_username=%s, database_path=%s, bot_token=%s",
-        settings.admin_id,
+        "Конфигурация загружена: admin_ids=%s, contact_username=%s, database_path=%s, bot_token=%s",
+        settings.admin_ids,
         settings.contact_username,
         settings.database_path,
         masked_token,
@@ -49,8 +49,8 @@ async def main() -> None:
     dp = Dispatcher()
     
     # Подключаем роутеры
-    admin.router.message.middleware(AdminMiddleware(settings.admin_id))
-    admin.router.callback_query.middleware(AdminMiddleware(settings.admin_id))
+    admin.router.message.middleware(AdminMiddleware(settings.admin_ids))
+    admin.router.callback_query.middleware(AdminMiddleware(settings.admin_ids))
     dp.include_router(admin.router)
     dp.include_router(private.router)
     dp.include_router(group.router)
@@ -63,8 +63,8 @@ async def main() -> None:
     dp["db"] = db_conn  # гарантируем доступ через dp["db"]
 
     # 5. Запуск планировщика
-    scheduler = create_scheduler(bot, db_conn, settings.admin_id)
-    await load_schedules(scheduler, bot, db_conn, settings.admin_id)
+    scheduler = create_scheduler(bot, db_conn, settings.admin_ids)
+    await load_schedules(scheduler, bot, db_conn, settings.admin_ids)
     scheduler.start()
     logger.info("Планировщик запущен")
 
