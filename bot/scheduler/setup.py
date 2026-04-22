@@ -9,9 +9,7 @@ from bot.scheduler.broadcaster import send_scheduled
 logger = logging.getLogger(__name__)
 
 
-
 async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_id: int):
-    """Загружает все активные расписания из БД в APScheduler."""
     for job in scheduler.get_jobs():
         if job.id != "reload_schedules":
             job.remove()
@@ -57,7 +55,6 @@ async def load_schedules(scheduler: AsyncIOScheduler, bot: Bot, db, admin_id: in
 
 
 def create_scheduler(bot: Bot, db, admin_id: int) -> AsyncIOScheduler:
-    """Создаёт scheduler с автоперезагрузкой расписаний каждые 60 секунд."""
     scheduler = AsyncIOScheduler()
 
     scheduler.add_job(
@@ -66,21 +63,6 @@ def create_scheduler(bot: Bot, db, admin_id: int) -> AsyncIOScheduler:
         seconds=60,
         id="reload_schedules",
         kwargs={"scheduler": scheduler, "bot": bot, "db": db, "admin_id": admin_id},
-    )
-
-    return scheduler
-
-def create_scheduler(bot: Bot, db) -> AsyncIOScheduler:
-    """Создаёт scheduler с автоперезагрузкой расписаний каждые 60 секунд."""
-    scheduler = AsyncIOScheduler()
-
-    # Джоба которая перечитывает расписания из БД
-    scheduler.add_job(
-        load_schedules,
-        "interval",
-        seconds=60,
-        id="reload_schedules",
-        kwargs={"scheduler": scheduler, "bot": bot, "db": db},
     )
 
     return scheduler
