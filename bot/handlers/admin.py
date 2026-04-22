@@ -18,6 +18,7 @@ from bot.db.queries import (
     create_schedule,
     toggle_schedule,
     delete_schedule,
+    get_all_active_group_chat_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,12 +42,18 @@ class CreateSchedule(StatesGroup):
     waiting_cron = State()
 
 
+class PostNow(StatesGroup):
+    choosing_message = State()
+    choosing_groups = State()
+
+
 # ── Keyboards ───────────────────────────────────────────────
 def main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Группы", callback_data="admin:groups")],
         [InlineKeyboardButton(text="Сообщения", callback_data="admin:messages")],
         [InlineKeyboardButton(text="Расписание", callback_data="admin:schedules")],
+        [InlineKeyboardButton(text="📨 Запостить", callback_data="admin:post")],
     ])
 
 
@@ -387,3 +394,94 @@ async def on_sched_cron(message: types.Message, state: FSMContext, db):
     sched_id = await create_schedule(db, data["message_id"], data["group_id"], cron)
     await state.clear()
     await message.answer(f"Расписание #{sched_id} создано.", reply_markup=main_menu_kb())
+
+
+# ── Post now: step 1 — choose message ──────────────────────
+@router.callback_query(F.data == "admin:post")
+async def cb_post_start(callback: CallbackQuery, state: FSMContext, db):
+    msgs = await get_all_messages(db)
+    if not msgs:
+        await callback.answer("Сначала создайте сообщение.", show_alert=True)
+        return
+
+    buttons = []
+    for m in msgs:
+        preview = (m["text"] or "")[:30]
+        photo_mark = " 🖼" if m["photo_id"] else ""
+        buttons.append([InlineKeyboardButton(
+            text=f"#{m['id']} {preview}{photo_mark}",
+            callback_data=f"admin:post_msg:{m['id']}"
+        )])
+    buttons.append(back_btn())
+
+    await state.set_state(PostNow.choosing_message)
+    await callback.message.edit_text("Выберите сообщение для отправки:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+# ── Post now: step 2 — choose groups ───────────────────────
+@router.callback_query(PostNow.choosing_message, F.data.startswith("admin:post_msg:"))
+async def cb_post_pick_msg(callback: CallbackQuery, state: FSMContext, db):
+    msg_id = int(callback.data.split(":")[2])
+    await state.update_data(message_id=msg_id)
+
+    groups = await get_active_groups(db)
+    if not groups:
+        await callback.answer("Нет активных групп.", show_alert=True)
+        await state.clear()
+        return
+
+    buttons = [[InlineKeyboardButton(text="📢 Все группы", callback_data="admin:post_grp:all")]]
+    for g in groups:
+        buttons.append([InlineKeyboardButton(
+            text=g["title"],
+            callback_data=f"admin:post_grp:{g['id']}:{g['chat_id']}"
+        )])
+    buttons.append(back_btn())
+
+    await state.set_state(PostNow.choosing_groups)
+    await callback.message.edit_text("Куда отправить:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+# ── Post now: send ──────────────────────────────────────────
+@router.callback_query(PostNow.choosing_groups, F.data.startswith("admin:post_grp:"))
+async def cb_post_send(callback: CallbackQuery, state: FSMContext, db):
+    from aiogram import Bot
+
+    data = await state.get_data()
+    msg = await get_message_by_id(db, data["message_id"])
+    if not msg:
+        await callback.answer("Сообщение не найдено.", show_alert=True)
+        await state.clear()
+        return
+
+    # Определяем список chat_id для отправки
+    val = callback.data.replace("admin:post_grp:", "")
+    if val == "all":
+        chat_ids = await get_all_active_group_chat_ids(db)
+    else:
+        parts = val.split(":")
+        chat_ids = [int(parts[1])]
+
+    bot: Bot = callback.bot
+    sent = 0
+    failed = 0
+
+    for chat_id in chat_ids:
+        try:
+            if msg["photo_id"]:
+                await bot.send_photo(chat_id=chat_id, photo=msg["photo_id"], caption=msg["text"])
+            else:
+                await bot.send_message(chat_id=chat_id, text=msg["text"])
+            sent += 1
+        except Exception as e:
+            logger.error(f"Ошибка отправки в {chat_id}: {e}")
+            failed += 1
+
+    await state.clear()
+    result = f"Отправлено: {sent}"
+    if failed:
+        result += f"\nОшибки: {failed}"
+    await callback.message.edit_text(result, reply_markup=main_menu_kb())
+    await callback.answer()

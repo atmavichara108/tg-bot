@@ -213,3 +213,10 @@ async def get_active_schedules(db: aiosqlite.Connection) -> list[dict]:
     ) as cursor:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+async def get_all_active_group_chat_ids(db: aiosqlite.Connection) -> list[int]:
+    """Возвращает список chat_id всех активных групп."""
+    async with db.execute("SELECT chat_id FROM groups WHERE is_active = 1") as cursor:
+        rows = await cursor.fetchall()
+        return [r[0] for r in rows]
+
